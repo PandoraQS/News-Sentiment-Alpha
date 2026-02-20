@@ -1,0 +1,5 @@
+feedparser
+redis
+transformers
+torch
+python-dotenv

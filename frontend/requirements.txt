@@ -1,0 +1,8 @@
+streamlit
+redis
+pandas
+requests
+altair
+streamlit-autorefresh
+wordcloud
+matplotlib
