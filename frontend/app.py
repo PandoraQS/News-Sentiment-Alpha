@@ -7,21 +7,94 @@ import altair as alt
 from streamlit_autorefresh import st_autorefresh
 from wordcloud import WordCloud
 import matplotlib.pyplot as plt
+from datetime import datetime
 
 st.set_page_config(page_title="Sentiment Alpha", layout="wide")
-st_autorefresh(interval=30000, key="datarefresh")
 
 r = redis.Redis(host='redis-cache', port=6379, db=0, decode_responses=True)
 OLLAMA_URL = "http://host.docker.internal:11434/api/generate"
 
+if 'cross_history' not in st.session_state:
+    st.session_state.cross_history = pd.DataFrame({
+        'Time': pd.Series(dtype='datetime64[ns]'),
+        'Sentiment': pd.Series(dtype='float'),
+        'Spread': pd.Series(dtype='float')
+    })
+
+if 'ollama_results' not in st.session_state:
+    st.session_state.ollama_results = {}
+
 def ask_ollama(prompt, is_bulk=False):
-    context = "Summarize the overall crypto market sentiment in 3 bullet points based on these headlines:" if is_bulk else "Explain the impact of this news:"
+    context = "Summarize market sentiment in 3 points:" if is_bulk else "Explain market impact:"
     try:
+        st.toast("Neural Engine: Connecting to Llama 3...", icon="🧠")
         response = requests.post(OLLAMA_URL, json={
             "model": "llama3", "prompt": f"{context} {prompt}", "stream": False
-        }, timeout=60)
-        return response.json().get('response', "Error.")
-    except: return "Ollama Offline."
+        }, timeout=120)
+        
+        if response.status_code == 200:
+            st.toast("Intelligence Synced: Analysis Ready", icon="✅")
+            return response.json().get('response', "Error: Empty response.")
+        else:
+            st.error(f"Engine Error: {response.status_code}")
+            return None
+    except Exception as e:
+        st.error(f"Core Connection Failed: {str(e)}")
+        return None
+
+def get_arbitrage_data():
+    symbols = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'BNB/USDT', 'XRP/USDT']
+    data = []
+    for s in symbols:
+        rb = r.get(f"ticker:binance:{s}")
+        rk = r.get(f"ticker:kraken:{s}")
+        if rb and rk:
+            b, k = json.loads(rb), json.loads(rk)
+            spread = ((float(k['bid']) - float(b['ask'])) / float(b['ask'])) * 100
+            data.append({"Symbol": s, "Spread": float(spread)})
+    return pd.DataFrame(data)
+
+@st.fragment(run_every=2)
+def render_dynamic_charts():
+    df_arb = get_arbitrage_data()
+    keys = r.keys("news:*")
+    news_list = [json.loads(r.get(k)) for k in keys]
+    
+    if news_list and not df_arb.empty:
+        full_df = pd.DataFrame(news_list)
+        full_df['score'] = full_df['sentiment'].map({'positive': 1, 'neutral': 0, 'negative': -1})
+        avg_index = full_df['score'].mean()
+        avg_spread_val = df_arb["Spread"].mean()
+
+        new_entry = pd.DataFrame({
+            'Time': [datetime.now()],
+            'Sentiment': [float(avg_index)],
+            'Spread': [float(avg_spread_val)]
+        })
+        st.session_state.cross_history = pd.concat([st.session_state.cross_history, new_entry]).tail(100)
+
+        st.subheader("Cross-Intelligence: Trajectory")
+        c1, c2 = st.columns([2, 1])
+        with c1:
+            base = alt.Chart(st.session_state.cross_history).encode(
+                x=alt.X('Sentiment:Q', scale=alt.Scale(domain=[-1.1, 1.1])),
+                y=alt.Y('Spread:Q', scale=alt.Scale(zero=False))
+            )
+            line = base.mark_line(point=True, color='#3498db', opacity=0.3).encode(order='Time:T')
+            current = base.mark_circle(size=300, color='red').transform_filter(
+                alt.datum.Time == st.session_state.cross_history['Time'].max()
+            )
+            st.altair_chart(line + current, width='stretch')
+        with c2:
+            st.write("**Current Regime**")
+            if avg_spread_val > 0.05 and avg_index < 0:
+                st.error("Panic Inefficiency")
+            elif avg_spread_val < 0.02 and avg_index > 0:
+                st.success("Efficient Bullishness")
+            else:
+                st.info("Stable Market")
+
+st.title("Sentiment Alpha")
 
 keys = r.keys("news:*")
 news_list = [json.loads(r.get(k)) for k in keys]
@@ -34,94 +107,60 @@ with st.sidebar:
     if st.button("Run Global Market Pulse"):
         if news_list:
             all_titles = ". ".join([n['title'] for n in news_list[:15]])
-            with st.spinner("Llama 3 is analyzing global trends..."):
-                st.session_state.bulk_analysis = ask_ollama(all_titles, is_bulk=True)
-        else: st.error("No data.")
-
-st.title("Sentiment Alpha")
+            with st.spinner("Deep Learning Model: Synthesizing Global Narrative..."):
+                res = ask_ollama(all_titles, is_bulk=True)
+                if res:
+                    st.session_state.bulk_analysis = res
+                    st.rerun()
+        else: st.toast("Data Sync Error", icon="⚠️")
 
 if news_list:
     full_df = pd.DataFrame(news_list)
     full_df['dt'] = pd.to_datetime(full_df['timestamp'], unit='s')
     df = full_df[full_df['confidence'] >= conf_threshold].copy()
-    
+
     if 'bulk_analysis' in st.session_state:
-        st.info(f"### 🤖 AI Market Summary\n{st.session_state.bulk_analysis}")
+        st.info(f"### AI Global Summary\n{st.session_state.bulk_analysis}")
+        if st.button("Clear Summary"):
+            del st.session_state.bulk_analysis
+            st.rerun()
 
     m1, m2, m3, m4 = st.columns(4)
     m1.metric("Signals", len(df))
-    
     df['score'] = df['sentiment'].map({'positive': 1, 'neutral': 0, 'negative': -1})
-    avg_index = df['score'].mean()
-    m2.metric("Sentiment Index", f"{avg_index:.2f}", delta="Bullish" if avg_index > 0 else "Bearish")
-    m3.metric("High Strength", len(df[df['confidence'] > 0.9]))
+    m2.metric("Sentiment Index", f"{df['score'].mean():.2f}")
+    m3.metric("Avg Confidence", f"{df['confidence'].mean():.2%}")
     m4.metric("Sources", "CoinTelegraph, CoinDesk")
 
     st.divider()
 
-    c_left, c_right = st.columns([1, 2])
+    render_dynamic_charts()
 
-    with c_left:
-        st.subheader("Topic Clusters")
-        text_corpus = " ".join(df['title'].tolist())
-        if text_corpus:
-            wc = WordCloud(
-                width=600, height=340, 
-                background_color="black", mode="RGBA",
-                colormap="cool", 
-                max_words=25
-            ).generate(text_corpus)
-            fig, ax = plt.subplots(figsize=(6, 3.4))
-            ax.imshow(wc, interpolation="bilinear")
-            ax.axis("off")
-            fig.patch.set_facecolor('black')
-            st.pyplot(fig)
-        else:
-            st.write("Awaiting news...")
-
-    with c_right:
-        st.subheader("Sentiment Flow (Sequential)")
-        if len(df) > 1:
-            df_flow = df.sort_values('timestamp').reset_index(drop=True)
-            df_flow['news_index'] = df_flow.index + 1
-            
-            df_flow['moving_avg'] = df_flow['score'].rolling(window=3, min_periods=1).mean()
-
-            flow_chart = alt.Chart(df_flow).mark_area(
-                line={'color':'#3498db', 'strokeWidth': 3},
-                color=alt.Gradient(
-                    gradient='linear',
-                    stops=[alt.GradientStop(color='#3498db', offset=1),
-                           alt.GradientStop(color='rgba(52, 152, 219, 0.05)', offset=0)],
-                    x1=1, x2=1, y1=1, y2=0
-                )
-            ).encode(
-                x=alt.X('news_index:O', title='Sequential News Feed (Oldest → Newest)', axis=alt.Axis(labelAngle=0)),
-                y=alt.Y('moving_avg:Q', title='Sentiment Score', scale=alt.Scale(domain=[-1.1, 1.1])),
-                tooltip=['title', 'sentiment', 'confidence']
-            ).properties(height=280)
-            
-            st.altair_chart(flow_chart, width='stretch')
-            st.caption("Each point represents one news item. The curve shows the rolling narrative trend.")
-        else:
-            st.info("Insufficient data points for flow analysis.")
-            
     st.divider()
-    
+
     st.subheader("Intelligence Feed")
-    color_map = {"positive": "green", "negative": "red", "neutral": "gray"}
+    color_emoji = {"positive": "🟢", "negative": "🔴", "neutral": "⚪"}
 
     for _, item in df.sort_values('timestamp', ascending=False).iterrows():
-        cols = st.columns([4, 1])
-        with cols[0]:
-            display_color = color_map.get(item['sentiment'].lower(), "gray")
-            with st.expander(f":{display_color}[{item['sentiment'].upper()}] - {item['title']}"):
-                st.write(f"**Confidence:** {item['confidence']:.2%}")
-                st.progress(item['confidence'])
-                st.write(f"[Source Article]({item['link']})")
-                if st.button("Ask Llama 3 Impact", key=item['link']):
-                    st.write(ask_ollama(item['title']))
-        with cols[1]:
-            st.caption(f"{item['dt'].strftime('%H:%M:%S')}")
+        article_id = item['link']
+        title_prefix = color_emoji.get(item['sentiment'].lower(), "⚪")
+        
+        with st.expander(f"{title_prefix} {item['sentiment'].upper()} - {item['title']}"):
+            st.write(f"**Confidence:** {item['confidence']:.2%}")
+            
+            if st.button("Analyze Impact", key=f"llama_{article_id}"):
+                with st.spinner("Llama 3 Pipeline: Computing Market Impact..."):
+                    result = ask_ollama(item['title'])
+                    if result:
+                        st.session_state.ollama_results[article_id] = result
+
+            if article_id in st.session_state.ollama_results:
+                st.markdown("---")
+                st.markdown(f"**AI Analysis:**\n\n{st.session_state.ollama_results[article_id]}")
+                if st.button("Clear", key=f"clr_{article_id}"):
+                    del st.session_state.ollama_results[article_id]
+                    st.rerun()
+        
+        st.caption(f"Time: {item['dt'].strftime('%H:%M:%S')}")
 else:
-    st.info("Syncing with Blockchain News Nodes...")
+    st.info("Waiting for node synchronization...")

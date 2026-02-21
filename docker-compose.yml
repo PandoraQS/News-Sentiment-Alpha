@@ -2,19 +2,18 @@ version: '3.8'
 services:
   backend-etl:
     build: ./backend
-    depends_on:
-      - redis-cache
-
-  redis-cache:
-    image: redis:alpine
-    ports:
-      - "6379:6379"
+    environment:
+      - REDIS_HOST=redis-cache
+    networks:
+      - crypto-bridge
 
   dashboard:
     build: ./frontend
     ports:
-      - "8501:8501"
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    depends_on:
-      - redis-cache
+      - "8502:8501"
+    networks:
+      - crypto-bridge
+
+networks:
+  crypto-bridge:
+    external: true

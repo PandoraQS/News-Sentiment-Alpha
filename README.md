@@ -1,6 +1,6 @@
 # Sentiment Alpha
 
-Sentiment Alpha is an advanced AI pipeline designed for real-time tracking of cryptocurrency market narratives. The system scrapes financial news, performs high-speed sentiment analysis using specialized NLP models, and provides deep-dive insights through a local Large Language Model.
+Sentiment Alpha is an AI pipeline designed for real-time tracking of cryptocurrency market narratives and their direct impact on market efficiency. The system correlates high-speed sentiment analysis with live exchange spreads to identify narrative-driven arbitrage opportunities.
 
 ![Dashboard](assets/image.png)
 
@@ -9,96 +9,72 @@ Sentiment Alpha is an advanced AI pipeline designed for real-time tracking of cr
 - Real-Time ETL Pipeline: Automatically fetches and processes news from major crypto sources every 5 minutes.
 - Dual-Layer AI Analysis:
   - Fast Layer: Uses FinBERT to classify sentiment and confidence scores in milliseconds.
-  - Deep Layer: Integrates with Ollama (Llama 3) for on-demand market impact explanations and bulk narrative summaries.
-- Dynamic Intelligence Feed: A reactive Streamlit dashboard featuring:
-  - Sentiment Index: A weighted average score indicating overall market mood.
-  - Topic Clusters: An automated word cloud of trending market keywords.
-  - Sentiment Flow: A sequential area chart showing the rolling narrative trend.
-  - Confidence Filtering: User-controlled threshold to filter out low-confidence market noise.
+  - Deep Layer: Integrates with Ollama (Llama 3) for on-demand market impact explanations and global narrative synthesis.
+- Cross-Intelligence Trajectory: A 2D mapping that tracks the relationship between Market Mood (Sentiment) and Market Inefficiency (Spread).
+- Dynamic Regime Analysis: Automated detection of market states: Panic Inefficiency, Efficient Bullishness, or Stable Market.
+- Reactive Fragment Rendering: Optimized dashboard using `st.fragment` to refresh market charts every 2 seconds without interrupting AI deep-dives.
 
 ## System Architecture
 
-The project follows a modular microservices architecture orchestrated with Docker.
+The project operates as part of a modular ecosystem, sharing a data backbone with the [Crypto Arbitrage Stealth Engine](https://github.com/PandoraQS/Crypto-Arbitrage-Stealth).
 
 ```mermaid
 graph TD
-    subgraph "External Sources"
-        RSS[RSS Feeds: Cointelegraph/Coindesk]
+    subgraph "Data Acquisition"
+        RSS[RSS Feeds]
+        ARB[Arbitrage Engine Stack]
     end
  
-    subgraph "Docker Infrastructure"
-        BE[Backend ETL: Python/FinBERT]
-        RD[(Redis Cache)]
-        FE[Frontend Dashboard: Streamlit]
+    subgraph "Docker Bridge Network"
+        BE[Sentiment ETL: Python/FinBERT]
+        RD[(Redis Shared Cache)]
+        FE[Frontend: Intelligence Hub]
     end
  
     subgraph "Local AI Engine"
         OL[Ollama: Llama 3]
     end
  
-    RSS -->|Scrape| BE
-    BE -->|Analyze Sentiment| BE
-    BE -->|Store JSON| RD
+    RSS --> BE
+    BE -->|Store Sentiment JSON| RD
+    ARB -->|Push Live Tickers| RD
     RD <--> FE
-    FE -->|Deep Dive Request| OL
+    FE -->|Neural Request| OL
     OL -->|Impact Analysis| FE
 ```
 
-## Data and Analysis Flow
+## Interoperability (Arbitrage Integration)
 
-This sequence diagram illustrates how the system handles user interactions and background updates.
+This project is designed to run alongside the [Crypto Arbitrage Stealth Engine](https://github.com/PandoraQS/Crypto-Arbitrage-Stealth).
 
-```mermaid
-sequenceDiagram
-    participant U as User
-    participant FE as Streamlit Dashboard
-    participant RD as Redis Cache
-    participant OL as Ollama (Host)
-
-    U->>FE: Open Dashboard
-    FE->>RD: Request Latest News
-    RD-->>FE: Return JSON Sentiment Data
-    FE->>U: Display News & Charts
-    
-    U->>FE: Click "Llama 3 Deep Dive"
-    FE->>OL: POST /api/generate (Title + Prompt)
-    Note over OL: Llama 3 Processing
-    OL-->>FE: Return Market Impact Analysis
-    FE->>U: Display AI Insight
-```
-
-## Backend Pipeline Logic
-
-The following state diagram describes the continuous ETL (Extract, Transform, Load) cycle of the backend engine.
-
-```mermaid
-stateDiagram-v2
-    [*] --> Fetching: Start Cycle (every 5 min)
-    Fetching --> Parsing: Get RSS Entries
-    Parsing --> Sentiment: FinBERT Processing
-    Sentiment --> Formatting: Create JSON Data
-    Formatting --> Storage: Save to Redis (ex=86400)
-    Storage --> [*]: Sleep
-```
+1. Shared Network: Both apps communicate via a dedicated Docker network named `crypto-bridge`.
+2. Data Synergy: Sentiment Alpha reads live pricing data from the Arbitrage project's Redis instance to populate the Cross-Intelligence charts.
 
 ## Data Schema
 
-The following diagram defines the JSON structure for the news data stored in Redis. This schema ensures consistency between the Backend ETL and the Frontend Dashboard.
+The dashboard merges two distinct data streams from Redis to generate the Cross-Intelligence mapping:
 
 ```mermaid
 erDiagram
+    NEWS_KEY ||--o{ CROSS_INTELLIGENCE : correlates
+    TICKER_KEY ||--o{ CROSS_INTELLIGENCE : correlates
+
     NEWS_KEY {
         string title
-        string link
         string sentiment
         float confidence
-        timestamp timestamp
     }
     TICKER_KEY {
         string symbol
-        float binance_price
-        float kraken_price
+        float bid
+        float ask
         float spread
+    }
+    CROSS_INTELLIGENCE {
+        datetime time
+        float avg_sentiment
+        float market_spread
+        string regime_label
     }
 ```
 
@@ -117,8 +93,17 @@ erDiagram
 
 - Docker and Docker Compose
 - Ollama installed on host machine
+- The Crypto Arbitrage Stealth Engine project cloned in a parallel directory.
 
-2. Prepare AI Models
+2. Create the Bridge Network
+
+Before launching, ensure the shared network exists:
+
+```bash
+docker network create crypto-bridge
+```
+
+3. Prepare AI Models
 
 Download the Llama 3 model for deep-dive analysis:
 
@@ -126,7 +111,7 @@ Download the Llama 3 model for deep-dive analysis:
 ollama pull llama3
 ```
 
-3. Launch Application
+4. Launch Application
 
 Clone the repository and run the containerized stack:
 
@@ -134,22 +119,24 @@ Clone the repository and run the containerized stack:
 docker-compose up --build
 ```
 
-4. Access Dashboard
+5. Access Dashboard
 
 Open your browser and navigate to:
 
 ```bash
-http://localhost:8501
+Sentiment Alpha: http://localhost:8502
+Arbitrage Dashboard: http://localhost:8501
 ```
 
 ## Analytics Deep Dive
 
-**Sentiment Flow (Sequential Trend)**
-This chart utilizes a 3-period rolling average to smooth out market volatility, providing a clearer view of the narrative trajectory. It helps traders identify if the market sentiment is improving or deteriorating sequentially.
+**Cross-Intelligence: Trajectory**
+A scatter plot with a historical "trace" that shows where the market is moving.
 
-**Topic Clusters (Word Cloud)**
-A real-time visualization of word frequency within analyzed headlines. Large terms represent dominant market topics, allowing for instant identification of the current main narrative.
+- X-Axis: Sentiment Index (-1 to +1).
+- Y-Axis: Market Spread (Inefficiency).
+- Red Dot: Current state.
+- Blue Line: Movement over the last 100 updates.
 
-## Future Roadmap
-
-- Arbitrage Bridge: Integration with the Crypto Arbitrage Stealth Engine to correlate sentiment with market spread fluctuations.
+**Intelligence Feed**
+A real-time feed of market signals. Use the Llama 3 Pipeline button to generate a deep-dive analysis of how a specific headline might widen or tighten exchange spreads.
